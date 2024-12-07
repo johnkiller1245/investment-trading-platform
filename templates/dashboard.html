@@ -1,0 +1,200 @@
+{% extends "base.html" %}
+
+{% block extra_head %}
+<script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+{% endblock %}
+
+{% block content %}
+<div class="dashboard-header">
+    <h1>Trading Dashboard</h1>
+    <div class="account-summary">
+        <div class="balance-card">
+            <h3>Account Balance</h3>
+            <p>${{ "%.2f"|format(balance) }}</p>
+        </div>
+        <div class="portfolio-value-card">
+            <h3>Total Portfolio Value</h3>
+            <p>${{ "%.2f"|format(total_value) }}</p>
+        </div>
+    </div>
+</div>
+
+<div class="dashboard-grid">
+    <div class="card">
+        <div class="card-header">Trading</div>
+        <div class="trading-panel">
+            <div class="order-form">
+                <div class="form-group">
+                    <label for="symbol" class="form-label">Stock Symbol</label>
+                    <input type="text" id="symbol" class="form-control" placeholder="e.g., AAPL">
+                </div>
+                <div class="stock-info" id="stock-info" style="display: none;">
+                    <span id="current-price"></span>
+                    <span id="price-change"></span>
+                </div>
+                <div class="form-group">
+                    <label for="shares" class="form-label">Number of Shares</label>
+                    <input type="number" id="shares" class="form-control" min="1">
+                </div>
+                <div class="button-group">
+                    <button onclick="executeTrade('buy')" class="btn btn-success">Buy</button>
+                    <button onclick="executeTrade('sell')" class="btn btn-danger">Sell</button>
+                </div>
+            </div>
+            <div id="stock-chart" class="chart-container"></div>
+        </div>
+    </div>
+
+    <div class="card">
+        <div class="card-header">Portfolio</div>
+        <table class="table">
+            <thead>
+                <tr>
+                    <th>Symbol</th>
+                    <th>Shares</th>
+                    <th>Current Price</th>
+                    <th>Value</th>
+                    <th>Gain/Loss</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for position in portfolio %}
+                <tr>
+                    <td>{{ position.symbol }}</td>
+                    <td>{{ position.shares }}</td>
+                    <td>${{ "%.2f"|format(position.current_price) }}</td>
+                    <td>${{ "%.2f"|format(position.position_value) }}</td>
+                    <td class="{{ 'price-change-positive' if position.gain_loss > 0 else 'price-change-negative' }}">
+                        ${{ "%.2f"|format(position.gain_loss) }}
+                    </td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+let currentSymbol = '';
+let stockChart = null;
+
+document.getElementById('symbol').addEventListener('input', debounce(function(e) {
+    const symbol = e.target.value.toUpperCase();
+    if (symbol.length >= 1) {
+        fetchStockData(symbol);
+    }
+}, 500));
+
+function debounce(func, wait) {
+    let timeout;
+    return function executedFunction(...args) {
+        const later = () => {
+            clearTimeout(timeout);
+            func(...args);
+        };
+        clearTimeout(timeout);
+        timeout = setTimeout(later, wait);
+    };
+}
+
+async function fetchStockData(symbol) {
+    try {
+        const response = await fetch(`/api/stock/${symbol}`);
+        const data = await response.json();
+        
+        if (data.error) {
+            throw new Error(data.error);
+        }
+
+        currentSymbol = symbol;
+        updateStockInfo(data);
+        updateStockChart(data);
+    } catch (error) {
+        console.error('Error fetching stock data:', error);
+    }
+}
+
+function updateStockInfo(data) {
+    const stockInfo = document.getElementById('stock-info');
+    const currentPrice = document.getElementById('current-price');
+    const priceChange = document.getElementById('price-change');
+
+    stockInfo.style.display = 'flex';
+    currentPrice.textContent = `$${data.price.toFixed(2)}`;
+    
+    const changeClass = data.change >= 0 ? 'price-change-positive' : 'price-change-negative';
+    priceChange.className = changeClass;
+    priceChange.textContent = `${data.change.toFixed(2)}%`;
+}
+
+function updateStockChart(data) {
+    const trace = {
+        x: data.dates,
+        y: data.history,
+        type: 'scatter',
+        mode: 'lines',
+        name: currentSymbol,
+        line: {
+            color: '#2962ff'
+        }
+    };
+
+    const layout = {
+        title: `${currentSymbol} Stock Price History`,
+        xaxis: {
+            title: 'Date',
+            showgrid: false
+        },
+        yaxis: {
+            title: 'Price ($)',
+            showgrid: true
+        },
+        margin: {
+            l: 50,
+            r: 20,
+            t: 40,
+            b: 40
+        }
+    };
+
+    Plotly.newPlot('stock-chart', [trace], layout);
+}
+
+async function executeTrade(action) {
+    const shares = parseInt(document.getElementById('shares').value);
+    
+    if (!currentSymbol || !shares || shares < 1) {
+        alert('Please enter a valid symbol and number of shares');
+        return;
+    }
+
+    try {
+        const response = await fetch('/api/trade', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+                symbol: currentSymbol,
+                shares: shares,
+                action: action
+            })
+        });
+
+        const data = await response.json();
+        
+        if (data.error) {
+            alert(data.error);
+        } else {
+            alert(data.message);
+            location.reload(); // Refresh to update portfolio
+        }
+    } catch (error) {
+        console.error('Error executing trade:', error);
+        alert('Failed to execute trade. Please try again.');
+    }
+}
+</script>
+{% endblock %}

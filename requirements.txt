@@ -1,0 +1,11 @@
+Flask==3.0.0
+Flask-SQLAlchemy==3.1.1
+Flask-Login==0.6.3
+Flask-WTF==1.2.1
+requests==2.31.0
+python-dotenv==1.0.0
+yfinance==0.2.33
+pandas==1.5.3
+plotly==5.18.0
+bcrypt==4.1.2
+email-validator==2.1.0.post1

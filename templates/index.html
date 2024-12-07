@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block content %}
+<div class="hero-section">
+    <h1>Welcome to TradePro</h1>
+    <p>Your advanced trading platform for smart investments</p>
+    <div class="cta-buttons">
+        {% if not current_user.is_authenticated %}
+            <a href="{{ url_for('register') }}" class="btn btn-primary">Get Started</a>
+            <a href="{{ url_for('login') }}" class="btn btn-secondary">Login</a>
+        {% else %}
+            <a href="{{ url_for('dashboard') }}" class="btn btn-primary">Go to Dashboard</a>
+        {% endif %}
+    </div>
+</div>
+
+<div class="features-grid">
+    <div class="feature-card">
+        <h3>Real-time Trading</h3>
+        <p>Execute trades with real-time market data and instant order processing</p>
+    </div>
+    <div class="feature-card">
+        <h3>Portfolio Management</h3>
+        <p>Track your investments and analyze performance with detailed analytics</p>
+    </div>
+    <div class="feature-card">
+        <h3>Market Analysis</h3>
+        <p>Access comprehensive market data and trading charts</p>
+    </div>
+</div>
+{% endblock %}

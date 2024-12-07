@@ -7,6 +7,7 @@ import pandas as pd
 from datetime import datetime
 import os
 from dotenv import load_dotenv
+from functools import lru_cache
 
 # Load environment variables
 load_dotenv()
@@ -62,6 +63,23 @@ class Transaction(db.Model):
 def load_user(user_id):
     return User.query.get(int(user_id))
 
+# Cache for stock data
+@lru_cache(maxsize=100)
+def get_cached_stock_data(symbol):
+    try:
+        stock = yf.Ticker(symbol)
+        info = stock.info
+        current_price = info.get('regularMarketPrice', 0)
+        return {
+            'symbol': symbol,
+            'price': current_price,
+            'name': info.get('longName', symbol),
+            'currency': info.get('currency', 'USD')
+        }
+    except Exception as e:
+        print(f"Error fetching stock data: {e}")
+        return None
+
 # Routes
 @app.route('/')
 def index():
@@ -115,42 +133,38 @@ def logout():
 def dashboard():
     portfolio = Portfolio.query.filter_by(user_id=current_user.id).all()
     portfolio_data = []
-    total_value = current_user.balance
+    total_value = 0
 
-    for position in portfolio:
-        stock = yf.Ticker(position.symbol)
-        current_price = stock.info.get('regularMarketPrice', 0)
-        position_value = current_price * position.shares
-        total_value += position_value
-        
-        portfolio_data.append({
-            'symbol': position.symbol,
-            'shares': position.shares,
-            'current_price': current_price,
-            'position_value': position_value,
-            'gain_loss': (current_price - position.purchase_price) * position.shares
-        })
+    for item in portfolio:
+        stock_data = get_cached_stock_data(item.symbol)
+        if stock_data:
+            current_price = stock_data['price']
+            value = current_price * item.shares
+            total_value += value
+            portfolio_data.append({
+                'symbol': item.symbol,
+                'shares': item.shares,
+                'current_price': current_price,
+                'value': value,
+                'purchase_price': item.purchase_price,
+                'gain_loss': (current_price - item.purchase_price) * item.shares
+            })
 
     return render_template('dashboard.html', 
                          portfolio=portfolio_data, 
-                         balance=current_user.balance,
-                         total_value=total_value)
+                         total_value=total_value,
+                         cash_balance=current_user.balance)
 
 @app.route('/api/stock/<symbol>')
 @login_required
 def get_stock_data(symbol):
     try:
-        stock = yf.Ticker(symbol)
-        hist = stock.history(period='1mo')
-        
-        return jsonify({
-            'price': stock.info.get('regularMarketPrice', 0),
-            'change': stock.info.get('regularMarketChangePercent', 0),
-            'history': hist['Close'].tolist(),
-            'dates': hist.index.strftime('%Y-%m-%d').tolist()
-        })
+        data = get_cached_stock_data(symbol)
+        if data:
+            return jsonify(data)
+        return jsonify({'error': 'Failed to fetch stock data'}), 404
     except Exception as e:
-        return jsonify({'error': str(e)}), 400
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/trade', methods=['POST'])
 @login_required
@@ -160,8 +174,11 @@ def trade():
     shares = int(data.get('shares'))
     action = data.get('action')  # 'buy' or 'sell'
 
-    stock = yf.Ticker(symbol)
-    current_price = stock.info.get('regularMarketPrice', 0)
+    stock_data = get_cached_stock_data(symbol)
+    if not stock_data:
+        return jsonify({'error': 'Failed to fetch stock data'}), 404
+
+    current_price = stock_data['price']
     total_cost = current_price * shares
 
     if action == 'buy':
